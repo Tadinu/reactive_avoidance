@@ -1,7 +1,7 @@
 #include "rmpcpp_planner/core/world.h"
 
-#include "nvblox/core/layer.h"
-#include "nvblox/ray_tracing/sphere_tracer.h"
+#include "nvblox/map/layer.h"
+#include "nvblox/rays/sphere_tracer.h"
 #include "rmpcpp/core/policy_value.h"
 #include "rmpcpp/core/space.h"
 #include "rmpcpp_planner/policies/raycasting_CUDA.h"
@@ -101,16 +101,15 @@ template double rmpcpp::NVBloxWorld<rmpcpp::Space<3>>::distanceToObstacle(
  * assumption is that state 1 is valid. */
 /** Only implemented for 3d below */
 template <class Space>
-bool rmpcpp::NVBloxWorld<Space>::checkMotion(const Vector& s1,
-                                             const Vector& s2) const {
+bool rmpcpp::NVBloxWorld<Space>::checkMotion(const Vector&, const Vector&) {
   throw std::runtime_error("Not implemented");
 }
 template bool rmpcpp::NVBloxWorld<rmpcpp::Space<2>>::checkMotion(
-    const Vector& s1, const Vector& s2) const;
+    const Vector& s1, const Vector& s2);
 
 template <>
 bool rmpcpp::NVBloxWorld<rmpcpp::Space<3>>::checkMotion(
-    const Vector& s1, const Vector& s2) const {
+    const Vector& s1, const Vector& s2) {
   if (collision(s2, this->tsdf_layer_.get())) {
     return false;
   }
@@ -120,11 +119,11 @@ bool rmpcpp::NVBloxWorld<rmpcpp::Space<3>>::checkMotion(
     return true;
   }
   nvblox::Ray ray;
-  ray.origin = s1.cast<float>();
-  ray.direction = ((s2 - s1) / (s2 - s1).norm()).cast<float>();
+  ray.origin() = s1.cast<float>();
+  ray.direction() = ((s2 - s1) / (s2 - s1).norm()).cast<float>();
 
   nvblox::SphereTracer st;
-  st.params().maximum_ray_length_m = float((s2 - s1).norm());
+  st.maximum_ray_length_m(float((s2 - s1).norm()));
   float t;
   st.castOnGPU(ray, *tsdf_layer_.get(), truncation_distance_, &t);
 
@@ -150,7 +149,8 @@ rmpcpp::NVBloxWorld<Space>::gradientToObstacle(const Vector& pos) {
   if (!succ) {
     return Vector::Ones();
   }
-  Vector dir = voxel.parent_direction.cast<double>();
+  voxel.parent_direction = Eigen::Vector3i::UnitY();
+  rmpcpp::NVBloxWorld<Space>::Vector dir;
   return dir / dir.norm();
 }
 
@@ -166,7 +166,10 @@ rmpcpp::NVBloxWorld<rmpcpp::Space<2>>::gradientToObstacle(const Vector& pos) {
   if (!succ) {
     return Vector::Zero();
   }
-  Vector dir = voxel.parent_direction({0, 1})
-                   .cast<double>();  // ignore 3rd coordinate in 2d
+
+  auto voxel_parent_direction = (double)(voxel.parent_direction(0, 1)); // ignore 3rd coordinate in 2d
+  Vector dir;
+  dir << voxel_parent_direction, 0,
+         0, voxel_parent_direction;
   return dir / dir.norm();
 }

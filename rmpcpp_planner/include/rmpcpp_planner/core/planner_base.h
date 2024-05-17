@@ -6,7 +6,7 @@
 #include <numeric>
 
 #include "Eigen/Dense"
-#include "nvblox/core/layer.h"
+#include "nvblox/map/layer.h"
 #include "rmpcpp/core/state.h"
 #include "world.h"
 

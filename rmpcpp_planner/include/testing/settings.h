@@ -2,7 +2,7 @@
 #define RMPCPP_PLANNER_SETTINGS_H
 #include <Eigen/Dense>
 
-#include "nvblox/core/common_names.h"
+#include "nvblox/map/common_names.h"
 namespace rmpcpp {
 
 enum PlannerType { RMP };

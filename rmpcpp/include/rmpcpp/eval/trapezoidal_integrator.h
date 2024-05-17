@@ -111,7 +111,7 @@ class TrapezoidalIntegrator {
 
     return current_pos_;
   }
-  Vector_q forwardIntegrateFixed(typename TPolicy::PValue policy, TGeometry& geometry,
+  Vector_q forwardIntegrateFixed(typename TPolicy::PValue policy, TGeometry& /*geometry*/,
                             float dt) {
     // relative start and end of integration
     const float a = 0.0;
@@ -127,7 +127,7 @@ class TrapezoidalIntegrator {
     // get current configuration space position and convert to
     //  task space.
     StateQ current_stateQ{current_pos_, current_vel_};
-    StateX current_stateX = geometry.convertToX(current_stateQ);
+    //StateX current_stateX = geometry.convertToX(current_stateQ);
 
     // evaluate all policy and get new accelerations
     acc_b = policy.f_;

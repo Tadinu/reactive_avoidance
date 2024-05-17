@@ -76,8 +76,8 @@ class SimpleTargetPolicy : public PolicyBase<NormSpace> {
     return (z + c_ * log(1 + exp(-2 * c_ * z)));
   }
 
-  double alpha_{1.0}, beta_{8.0}, c_{0.005};
   Vector target_;
+  double alpha_{1.0}, beta_{8.0}, c_{0.005};
 };
 
 }  // namespace rmpcpp

@@ -1,7 +1,7 @@
 #ifndef RMPCPP_PLANNER_SIMPLE_ESDF_H
 #define RMPCPP_PLANNER_SIMPLE_ESDF_H
 
-#include "nvblox/core/common_names.h"
+#include "nvblox/map/common_names.h"
 #include "rmpcpp/core/policy_base.h"
 #include "rmpcpp_planner/core/parameters.h"
 #include "rmpcpp_planner/policies/world_policy_base.h"

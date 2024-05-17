@@ -27,6 +27,8 @@ void Tester::runSingle(const size_t run_index) {
     case rmpcpp::SPHERES_BOX_WORLD:
       worldgen_.generateRandomWorld(settings_.obstacles);
       break;
+    default:
+      throw std::runtime_error("Not implemented");
   }
 
   switch (settings_.planner_type) {
@@ -112,7 +114,7 @@ void Tester::exportWorld(std::string path, const int i) {
 void Tester::run() {
   statistics_.reset(getMapName());
 
-  for (size_t run_index = 0; run_index < settings_.n_runs; run_index++) {
+  for (size_t run_index = 0; run_index < (size_t)settings_.n_runs; run_index++) {
     runSingle(run_index);
 
     /** Export trajectories only if enabled */

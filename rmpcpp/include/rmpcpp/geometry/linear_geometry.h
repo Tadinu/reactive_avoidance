@@ -40,7 +40,7 @@ class LinearGeometry : public GeometryBase<d, d> {
    * Return jacobian. As the spaces are equal, this
    * is always identity.
    */
-  virtual typename base::J_phi J(const StateX &state) const {
+  virtual typename base::J_phi J(const StateX&) const {
     return base::J_phi::Identity();
   }
 

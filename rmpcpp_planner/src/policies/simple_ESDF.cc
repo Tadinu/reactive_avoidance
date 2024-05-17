@@ -25,7 +25,7 @@ rmpcpp::SimpleEsdfPolicy<rmpcpp::Space<3>>::evaluateAt(const PState& state) {
 
   Vector direction = voxels[0].parent_direction.cast<double>() * distance;
 
-  Vector obst = pos + direction;
+  //Vector obst = pos + direction;
 
   Vector delta_d = -direction / direction.norm();
 
@@ -59,10 +59,13 @@ rmpcpp::SimpleEsdfPolicy<rmpcpp::Space<2>>::evaluateAt(const PState& state) {
     throw(std::runtime_error("Unable to evaluate simple ESDF policy\n"));
   }
 
-  auto distance = (double)voxels[0].squared_distance_vox;
-  Vector direction = voxels[0].parent_direction.cast<double>()({0, 1}) *
-                     distance;  // convert back to 2d
-  Vector obst = pos + direction;
+  auto& voxel = voxels[0];
+  auto distance = (double)voxel.squared_distance_vox;
+  auto voxel_distance = (double)(voxel.parent_direction(0, 1)) * distance;  // convert back to 2d
+  Vector direction;
+  direction << voxel_distance, 0,
+               0, voxel_distance;
+  //Vector obst = pos + direction;
 
   Vector delta_d = -direction / direction.norm();
 

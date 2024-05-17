@@ -10,8 +10,8 @@
 /** NVBLOX */
 #include <Eigen/Dense>
 
-#include "nvblox/core/common_names.h"
-#include "nvblox/core/layer.h"
+#include "nvblox/map/common_names.h"
+#include "nvblox/map/layer.h"
 
 namespace rmpcpp {
 
@@ -69,7 +69,7 @@ class NVBloxWorld : public World<Space> {
   nvblox::EsdfLayer* getEsdfLayer() { return esdf_layer_.get(); };
   nvblox::TsdfLayer* getTsdfLayer() { return tsdf_layer_.get(); };
 
-  bool checkMotion(const Vector& s1, const Vector& s2) const;
+  bool checkMotion(const Vector& s1, const Vector& s2);
 
   template <class VoxelType>
   static VoxelType getVoxel(const Vector& pos,

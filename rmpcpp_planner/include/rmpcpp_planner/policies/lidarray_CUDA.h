@@ -2,7 +2,7 @@
 #ifndef RMPCPP_PLANNER_LIDARRAY_CUDA_H
 #define RMPCPP_PLANNER_LIDARRAY_CUDA_H
 
-#include "nvblox/core/common_names.h"
+#include "nvblox/map/common_names.h"
 #include "rmpcpp/core/policy_base.h"
 #include "rmpcpp_planner/core/parameters.h"
 #include "rmpcpp_planner/core/world_rmp.h"
@@ -21,7 +21,7 @@ typedef Eigen::Matrix<float, 3, 4>
 template <class Space>
 class LidarRayCudaPolicy : public rmpcpp::WorldPolicyBase<Space> {
  public:
-  typedef struct LidarData {
+  struct LidarData {
     const uint8_t *data{nullptr};
     size_t size{0};
     size_t stride{0};

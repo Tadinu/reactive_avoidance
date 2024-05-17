@@ -1,9 +1,9 @@
 #include <Eigen/QR>
 #include <cmath>
 
-#include "nvblox/gpu_hash/cuda/gpu_hash_interface.cuh"
-#include "nvblox/gpu_hash/cuda/gpu_indexing.cuh"
-#include "nvblox/ray_tracing/sphere_tracer.h"
+#include "nvblox/gpu_hash/internal/cuda/gpu_hash_interface.cuh"
+#include "nvblox/gpu_hash/internal/cuda/gpu_indexing.cuh"
+#include "nvblox/rays/sphere_tracer.h"
 #include "nvblox/utils/timing.h"
 #include "rmpcpp_planner/policies/misc.cuh"
 #include "rmpcpp_planner/policies/raycasting_CUDA.h"
@@ -15,14 +15,14 @@
  ********************************************************************/
 
 /** Adapted from NVBLOX */
-__device__ inline bool isTsdfVoxelValid(const nvblox::TsdfVoxel &voxel) {
+__device__ __host__ inline bool isTsdfVoxelValid(const nvblox::TsdfVoxel &voxel) {
   constexpr float kMinWeight = 1e-4;
   return voxel.weight > kMinWeight;
 }
 /**
  * Thrusts a ray on a GPU, adapted from NVBLOX
  */
-__device__ thrust::pair<float, bool> cast(
+__device__ __host__ thrust::pair<float, bool> cast(
     const nvblox::Ray &ray,                                          // NOLINT
     nvblox::Index3DDeviceHashMapType<nvblox::TsdfBlock> block_hash,  // NOLINT
     float truncation_distance_m,                                     // NOLINT
@@ -37,7 +37,7 @@ __device__ thrust::pair<float, bool> cast(
   float t = 0.0f;
   for (int i = 0; (i < maximum_steps) && (t < maximum_ray_length_m); i++) {
     // Current point to sample
-    const Eigen::Vector3f p_L = ray.origin + t * ray.direction;
+    const Eigen::Vector3f p_L = ray.origin() + t * ray.direction();
 
     // Evaluate the distance at this point
     float step;
@@ -98,7 +98,7 @@ __device__ thrust::pair<float, bool> cast(
   // Ran out of number of steps or distance... Fail
   return {t, false};
 }
-inline __device__ thrust::pair<float, float> get_angles(const float u,
+inline __device__ __host__ thrust::pair<float, float> get_angles(const float u,
                                                         const float v) {
   /** Convert uniform sample idx/dimx and idy/dimy to uniform sample on sphere
    */
@@ -107,13 +107,14 @@ inline __device__ thrust::pair<float, float> get_angles(const float u,
   return {phi, theta};
 }
 
-__global__ void raycastKernel(
+__device__ __host__ Eigen::Matrix3f raycastKernel(
     const Eigen::Vector3f origin, const Eigen::Vector3f vel,
     Eigen::Matrix3f *metric_sum, Eigen::Vector3f *metric_x_force_sum,
     nvblox::Index3DDeviceHashMapType<nvblox::TsdfBlock> block_hash,
     float truncation_distance, float block_size, int maximum_steps,
     float maximum_ray_length, float surface_distance_eps,
-    const RaycastingCudaPolicyParameters parameters
+    const RaycastingCudaPolicyParameters parameters,
+    Eigen::Vector3f& f_out
 #if OUTPUT_RAYS
     ,
     Eigen::Vector3f *ray_endpoints
@@ -142,8 +143,8 @@ __global__ void raycastKernel(
   float y = sin(phi) * sin(theta);
   float z = cos(phi);
   nvblox::Ray ray;
-  ray.direction = {x, y, z};
-  ray.origin = origin;
+  ray.direction() = {x, y, z};
+  ray.origin() = origin;
 
   thrust::pair<float, bool> result =
       cast(ray, block_hash, truncation_distance, block_size, maximum_steps,
@@ -156,12 +157,11 @@ __global__ void raycastKernel(
     /** No obstacle hit: return */
     A = Matrix::Zero();
     metric_x_force = Vector::Zero();
-
   } else {
     /** Calculate resulting RMP for this obstacle */
     float distance = result.first;
 
-    Vector direction = ray.direction;
+    Vector direction = ray.direction();
 
     /** Unit vector pointing away from the obstacle */
     Vector delta_d =
@@ -176,17 +176,51 @@ __global__ void raycastKernel(
                                 parameters.v_damp, parameters.epsilon_damp) *
                     max(0.0, float(-vel.transpose() * delta_d)) *
                     (delta_d * delta_d.transpose()) * vel;
-    Vector f = f_rep + f_damp;
-    Vector f_norm = softnorm(f, parameters.c_softmax_obstacle);
+    f_out = f_rep + f_damp;
+    Vector f_norm = softnorm(f_out, parameters.c_softmax_obstacle);
 
     if (parameters.metric) {
       A = w(distance, parameters.r) * f_norm * f_norm.transpose();
     } else {
       A = w(distance, parameters.r) * Matrix::Identity();
     }
-    A = A / float(dimx * dimy);  // scale with number of rays
-    metric_x_force = A * f;
   }
+  return A;
+}
+
+__global__ void call_raycastKernel(const Eigen::Vector3f origin, const Eigen::Vector3f vel,
+    Eigen::Matrix3f *metric_sum, Eigen::Vector3f *metric_x_force_sum,
+    nvblox::Index3DDeviceHashMapType<nvblox::TsdfBlock> block_hash,
+    float truncation_distance, float block_size, int maximum_steps,
+    float maximum_ray_length, float surface_distance_eps,
+    const RaycastingCudaPolicyParameters parameters
+#if OUTPUT_RAYS
+    ,
+    Eigen::Vector3f *ray_endpoints
+#endif
+) {
+   using Vector = Eigen::Vector3f;
+   using Matrix = Eigen::Matrix3f;
+   Vector f;
+   Matrix A = raycastKernel(origin, vel, metric_sum,
+                 metric_x_force_sum, 
+                 block_hash,
+                 truncation_distance, block_size, maximum_steps,
+                 maximum_ray_length, surface_distance_eps,
+                 parameters,
+                 f
+#if OUTPUT_RAYS
+    ,
+    ray_endpoints
+#endif
+   );
+
+  const unsigned int dimx = gridDim.x * blockDim.x;
+  const unsigned int idy = threadIdx.y + blockIdx.y * blockDim.y;
+  const unsigned int dimy = gridDim.y * blockDim.y;
+
+  A = A / float(dimx * dimy);  // scale with number of rays
+  Vector metric_x_force = A * f;
 
   const int blockId = blockIdx.x + blockIdx.y * gridDim.x;
 
@@ -194,7 +228,7 @@ __global__ void raycastKernel(
   using BlockReduceMatrix =
       typename cub::BlockReduce<Matrix, BLOCKSIZE, cub::BLOCK_REDUCE_RAKING,
                                 BLOCKSIZE>;
-  __shared__ typename BlockReduceMatrix::TempStorage temp_storage_matrix;
+  typename BlockReduceMatrix::TempStorage temp_storage_matrix;
   Matrix sum_matrices0 = BlockReduceMatrix(temp_storage_matrix)
                              .Sum(A);  // Sum calculated on thread 0
 
@@ -202,16 +236,18 @@ __global__ void raycastKernel(
   using BlockReduceVector =
       typename cub::BlockReduce<Vector, BLOCKSIZE, cub::BLOCK_REDUCE_RAKING,
                                 BLOCKSIZE>;
-  __shared__ typename BlockReduceVector::TempStorage temp_storage_vector;
+  typename BlockReduceVector::TempStorage temp_storage_vector;
   Vector sum_vectors0 =
       BlockReduceVector(temp_storage_vector).Sum(metric_x_force);
 
   __syncthreads();
+
   if (threadIdx.x == 0 && threadIdx.y == 0) {
     metric_x_force_sum[blockId] = sum_vectors0;
     metric_sum[blockId] = sum_matrices0;
   }
 }
+
 /********************************************************************/
 
 template <class Space>
@@ -239,8 +275,7 @@ template rmpcpp::RaycastingCudaPolicy<rmpcpp::Space<3>>::RaycastingCudaPolicy(
     NVBloxWorldRMP<rmpcpp::Space<3>> *world);
 
 template <class Space>
-void rmpcpp::RaycastingCudaPolicy<Space>::cudaStartEval(const PState &state) {
-  throw std::logic_error("Not implemented");
+void rmpcpp::RaycastingCudaPolicy<Space>::cudaStartEval(const PState&) {
 };
 
 /**
@@ -270,7 +305,7 @@ void rmpcpp::RaycastingCudaPolicy<rmpcpp::Space<3>>::cudaStartEval(
              sizeof(Eigen::Vector3f) * blockdim * blockdim);
   constexpr dim3 kThreadsPerThreadBlock(BLOCKSIZE, BLOCKSIZE, 1);
   const dim3 num_blocks(blockdim, blockdim, 1);
-  raycastKernel<<<num_blocks, kThreadsPerThreadBlock, 0, stream_>>>(
+  call_raycastKernel<<<num_blocks, kThreadsPerThreadBlock, 0, stream_>>>(
       pos, vel, metric_sum_device_, metric_x_force_sum_device_,
       gpu_layer_view.getHash().impl_,
       parameters_.truncation_distance_vox * layer_->voxel_size(),

@@ -2,7 +2,7 @@
 #include <cmath>
 #include <iostream>
 
-#include "nvblox/gpu_hash/cuda/gpu_hash_interface.cuh"
+#include "nvblox/gpu_hash/internal/cuda/gpu_hash_interface.cuh"
 #include "nvblox/utils/timing.h"
 #include "rmpcpp_planner/policies/lidarray_CUDA.h"
 #include "rmpcpp_planner/policies/misc.cuh"
@@ -26,12 +26,12 @@ typedef struct LidarPointOuster {  //     Start     End     Size
   uint32_t unknown_3;              //        36      39        4
   uint32_t unknown_4;              //        40      43        4
   uint32_t unknown_5;              //        44      47        4
-  __device__ inline Eigen::Vector3f ray() {
+  __device__ __host__ inline Eigen::Vector3f ray() {
     return {x, y, z};
     // tried doing this with Eigen::Map<> but always somehow got a warp
     // memory alignment problem. so for now leaving the copying.
   }
-  __device__ inline float ray_length() { return range / 1000.0; }
+  __device__ __host__ inline float ray_length() { return range / 1000.0; }
 } __attribute__((
     packed));  // important! we want same memory alignment as in the message
 
@@ -45,8 +45,8 @@ typedef struct LidarPointSim {  //     Start     End     Size
   uint16_t ring;                //        16      17        2
   uint32_t time;                //        18      21        4
 
-  __device__ inline Eigen::Vector3f ray() { return {x, y, z}; }
-  __device__ inline float ray_length() { return ray().norm(); }
+  __device__ __host__ inline Eigen::Vector3f ray() { return {x, y, z}; }
+  __device__ __host__ inline float ray_length() { return ray().norm(); }
 } __attribute__((
     packed));  // important! we want same memory alignment as in the message
 
@@ -57,14 +57,22 @@ typedef struct LidarPointSim {  //     Start     End     Size
   typedef LidarPointSim LidarPoint;
 #endif
 
+__host__ __device__ void f() {
+#ifdef __CUDA_ARCH__
+    printf ("Device Thread %d\n", threadIdx.x);
+#else
+    printf ("Host code!\n");
+#endif
+}
 
-__global__ void raycastKernel(
+__host__ __device__ Eigen::Matrix3f raycastKernel(
     const Eigen::Vector3f vel, const uint8_t* lidar_data,
     size_t lidar_data_n_points, Eigen::Matrix3f* metric_sum,
     Eigen::Vector3f* metric_x_force_sum, float maximum_ray_length,
     const RaycastingCudaPolicyParameters parameters, bool output_debug,
     rmpcpp::LidarRayDebugData* output_values,
-    rmpcpp::LidarPolicyDebugData* policy_debug_data) {
+    rmpcpp::LidarPolicyDebugData* policy_debug_data,
+    rmpcpp::LidarPolicyDebugData& policy_data) {
   /** Shared memory to sum the components of an RMP */
   using Vector = Eigen::Vector3f;
   using Matrix = Eigen::Matrix3f;
@@ -73,7 +81,7 @@ __global__ void raycastKernel(
   const unsigned int idx = threadIdx.x + blockIdx.x * blockDim.x;
   const unsigned int dimx = gridDim.x * blockDim.x;
   const unsigned int idy = threadIdx.y + blockIdx.y * blockDim.y;
-  const unsigned int dimy = gridDim.y * blockDim.y;
+  //const unsigned int dimy = gridDim.y * blockDim.y;
   const unsigned int id = idx + idy * dimx;
 
   LidarPoint* point = (LidarPoint*)lidar_data;
@@ -84,8 +92,6 @@ __global__ void raycastKernel(
 
   Matrix A_obst, A;
   Vector metric_x_force;
-
-  rmpcpp::LidarPolicyDebugData policy_data;
 
   if (ray_length >= maximum_ray_length || id >= lidar_data_n_points ||
       ray_length <= 0.2 || point[id].reflectivity <= 25) {
@@ -135,41 +141,61 @@ __global__ void raycastKernel(
     output_values[id](6) = f_damp.norm();
     output_values[id](7) = f_rep.norm();
   }
-
-  const int blockId = blockIdx.x + blockIdx.y * gridDim.x;
-
-  /** Reduction within CUDA block: Start with metric reduction */
-  using BlockReduceMatrix =
-      typename cub::BlockReduce<Matrix, BLOCKSIZE, cub::BLOCK_REDUCE_RAKING,
-                                BLOCKSIZE>;
-  __shared__ typename BlockReduceMatrix::TempStorage temp_storage_matrix;
-  Matrix sum_matrices0 = BlockReduceMatrix(temp_storage_matrix)
-                             .Sum(A);  // Sum calculated on thread 0
-
-  /** Metric x force reduction */
-  using BlockReduceVector =
-      typename cub::BlockReduce<Vector, BLOCKSIZE, cub::BLOCK_REDUCE_RAKING,
-                                BLOCKSIZE>;
-  __shared__ typename BlockReduceVector::TempStorage temp_storage_vector;
-  Vector sum_vectors0 =
-      BlockReduceVector(temp_storage_vector).Sum(metric_x_force);
-
-  /** Reduction within CUDA block: Start with metric reduction */
-  using BlockReduceDebugData =
-      typename cub::BlockReduce<rmpcpp::LidarPolicyDebugData, BLOCKSIZE,
-                                cub::BLOCK_REDUCE_RAKING, BLOCKSIZE>;
-  __shared__ typename BlockReduceDebugData::TempStorage temp_storage_debug_data;
-  rmpcpp::LidarPolicyDebugData sum_debugdata =
-      BlockReduceDebugData(temp_storage_debug_data)
-          .Sum(policy_data);  // Sum calculated on thread 0
-
-  __syncthreads();
-  if (threadIdx.x == 0 && threadIdx.y == 0) {
-    metric_x_force_sum[blockId] = sum_vectors0;
-    metric_sum[blockId] = sum_matrices0;
-    policy_debug_data[blockId] = sum_debugdata;
-  }
+  return A;
 }
+
+__global__ void call_raycastKernel(const Eigen::Vector3f vel, const uint8_t* lidar_data,
+    size_t lidar_data_n_points, Eigen::Matrix3f* metric_sum,
+    Eigen::Vector3f* metric_x_force_sum, float maximum_ray_length,
+    const RaycastingCudaPolicyParameters parameters, bool output_debug,
+    rmpcpp::LidarRayDebugData* output_values,
+    rmpcpp::LidarPolicyDebugData* policy_debug_data)
+{
+    using Vector = Eigen::Vector3f;
+    using Matrix = Eigen::Matrix3f;
+    rmpcpp::LidarPolicyDebugData policy_data;
+    Matrix A = raycastKernel(vel, lidar_data, lidar_data_n_points, metric_sum,
+                 metric_x_force_sum, maximum_ray_length, parameters, output_debug, output_values,
+                 policy_debug_data, policy_data);
+
+    
+    const int blockId = blockIdx.x + blockIdx.y * gridDim.x;
+    Vector metric_x_force;
+
+    /** Reduction within CUDA block: Start with metric reduction */
+    using BlockReduceMatrix =
+        typename cub::BlockReduce<Matrix, BLOCKSIZE, cub::BLOCK_REDUCE_RAKING,
+                                  BLOCKSIZE>;
+    typename BlockReduceMatrix::TempStorage temp_storage_matrix;
+    Matrix sum_matrices0 = BlockReduceMatrix(temp_storage_matrix)
+                                .Sum(A);  // Sum calculated on thread 0
+
+    /** Metric x force reduction */
+    using BlockReduceVector =
+        typename cub::BlockReduce<Vector, BLOCKSIZE, cub::BLOCK_REDUCE_RAKING,
+                                  BLOCKSIZE>;
+    typename BlockReduceVector::TempStorage temp_storage_vector;
+    Vector sum_vectors0 =
+        BlockReduceVector(temp_storage_vector).Sum(metric_x_force);
+
+    /** Reduction within CUDA block: Start with metric reduction */
+    using BlockReduceDebugData =
+        typename cub::BlockReduce<rmpcpp::LidarPolicyDebugData, BLOCKSIZE,
+                                  cub::BLOCK_REDUCE_RAKING, BLOCKSIZE>;
+    typename BlockReduceDebugData::TempStorage temp_storage_debug_data;
+    rmpcpp::LidarPolicyDebugData sum_debugdata =
+        BlockReduceDebugData(temp_storage_debug_data)
+            .Sum(policy_data);  // Sum calculated on thread 0
+
+    __syncthreads();
+
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+      metric_x_force_sum[blockId] = sum_vectors0;
+      metric_sum[blockId] = sum_matrices0;
+      policy_debug_data[blockId] = sum_debugdata;
+    }
+}
+
 /********************************************************************/
 
 template <class Space>
@@ -223,8 +249,7 @@ template rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::LidarRayCudaPolicy(
     RaycastingCudaPolicyParameters parameters);
 
 template <class Space>
-void rmpcpp::LidarRayCudaPolicy<Space>::cudaStartEval(const PState& state) {
-  throw std::logic_error("Not implemented");
+__device__ __host__ void rmpcpp::LidarRayCudaPolicy<Space>::cudaStartEval(const PState& state) {
 };
 
 /**
@@ -232,7 +257,7 @@ void rmpcpp::LidarRayCudaPolicy<Space>::cudaStartEval(const PState& state) {
  * @param state
  */
 template <>
-void rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::cudaStartEval(
+__device__ __host__ void rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::cudaStartEval(
     const PState& state) {
   /** State vectors */
   Eigen::Vector3f pos = state.pos_.cast<float>();
@@ -243,10 +268,10 @@ void rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::cudaStartEval(
   constexpr dim3 kThreadsPerThreadBlock(BLOCKSIZE, BLOCKSIZE, 1);
   const dim3 num_blocks(blockdim, blockdim, 1);
 
-  raycastKernel<<<num_blocks, kThreadsPerThreadBlock, 0, stream_>>>(
-      vel, lidar_data_device_, lidar_data_n_points_, metric_sum_device_,
-      metric_x_force_sum_device_, parameters_.r * 10, parameters_, true,
-      output_cloud_, policy_debug_data_device_);
+  //call_raycastKernel<<<num_blocks, kThreadsPerThreadBlock, 0, stream_>>>(
+  //    vel, lidar_data_device_, lidar_data_n_points_, metric_sum_device_,
+  //    metric_x_force_sum_device_, parameters_.r * 10, parameters_, true,
+  //    output_cloud_, policy_debug_data_device_);
 }
 
 template <>
@@ -282,7 +307,7 @@ void rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::updateLidarData(
  */
 template <>
 rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::PValue
-rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::evaluateAt(const PState& state) {
+__device__ __host__ rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::evaluateAt(const PState& state) {
   const int blockdim = parameters_.N_sqrt / BLOCKSIZE;
 
   if (!async_eval_started_) {
@@ -357,14 +382,16 @@ rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<2>>::evaluateAt(const PState& state) {
  * @param state
  */
 template <class Space>
-void rmpcpp::LidarRayCudaPolicy<Space>::startEvaluateAsync(
+__device__ void rmpcpp::LidarRayCudaPolicy<Space>::startEvaluateAsync(
     const PState& state) {
   cudaStartEval(state);
   async_eval_started_ = true;
 }
-template void rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<2>>::startEvaluateAsync(
+template
+__device__ void rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<2>>::startEvaluateAsync(
     const PState& state);
-template void rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::startEvaluateAsync(
+template
+__device__ void rmpcpp::LidarRayCudaPolicy<rmpcpp::Space<3>>::startEvaluateAsync(
     const PState& state);
 
 /**

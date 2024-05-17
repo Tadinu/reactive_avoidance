@@ -42,7 +42,7 @@ LidarCloudNode::LidarCloudNode()
 }
 
 void LidarCloudNode::configCallback(rmpcpp_planner::LidarPlannerConfig &config,
-                                    uint32_t level) {
+                                    uint32_t /*level*/) {
   params.alpha_goal = config.alpha_goal;
   params.beta_goal = config.beta_goal;
   params.gamma_goal = config.gamma_goal;

@@ -4,9 +4,9 @@
 #include <random>
 #include <vector>
 
-#include "nvblox/core/common_names.h"
+#include "nvblox/map/common_names.h"
 #include "nvblox/core/types.h"
-#include "nvblox/core/voxels.h"
+#include "nvblox/map/voxels.h"
 #include "nvblox/integrators/esdf_integrator.h"
 #include "nvblox/mesh/mesh_integrator.h"
 #include "nvblox/primitives/scene.h"

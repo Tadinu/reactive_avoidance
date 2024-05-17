@@ -1,6 +1,6 @@
 #include "rmpcpp_planner/core/world_rmp.h"
 
-#include "nvblox/core/layer.h"
+#include "nvblox/map/layer.h"
 #include "rmpcpp/core/policy_value.h"
 #include "rmpcpp/core/space.h"
 #include "rmpcpp_planner/policies/raycasting_CUDA.h"

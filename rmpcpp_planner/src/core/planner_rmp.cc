@@ -69,7 +69,7 @@ void rmpcpp::PlannerRMP<Space>::integrate() {
       this->goal_reached_ = true;
     }
 
-    if (num_steps > parameters_.max_length) {
+    if (num_steps > (size_t)parameters_.max_length) {
       this->diverged_ = true;
     }
 

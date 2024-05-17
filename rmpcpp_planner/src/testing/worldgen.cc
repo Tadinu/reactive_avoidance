@@ -2,10 +2,10 @@
 
 #include <random>
 
-#include "nvblox/core/bounding_boxes.h"
-#include "nvblox/core/common_names.h"
+#include "nvblox/geometry/bounding_boxes.h"
+#include "nvblox/map/common_names.h"
 #include "nvblox/core/types.h"
-#include "nvblox/core/voxels.h"
+#include "nvblox/map/voxels.h"
 #include "nvblox/io/mesh_io.h"
 #include "nvblox/primitives/primitives.h"
 #include "nvblox/primitives/scene.h"
@@ -115,14 +115,14 @@ void rmpcpp::WorldGen::generateRandomWorld(const int& n, const float& r,
       y_min + settings_.voxel_size, y_max - settings_.voxel_size);
 
   /** Generate TSDF */
-  scene_.generateSdfFromScene(
+  scene_.generateLayerFromScene(
       settings_.voxel_truncation_distance * settings_.voxel_size,
       tsdf_layer_.get());
 
   /** Generate ESDF from TSDF */
   std::vector<Eigen::Vector3i> block_indices =
       tsdf_layer_->getAllBlockIndices();
-  esdf_integrator_.integrateBlocksOnGPU(*tsdf_layer_, block_indices,
+  esdf_integrator_.integrateBlocks(*tsdf_layer_, block_indices,
                                        esdf_layer_.get());
 }
 

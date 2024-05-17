@@ -56,10 +56,10 @@ class PolicyBase {
   using PState = State<NormSpace::dim>;
 
   // to be implemented in derivatives.
-  virtual PValue evaluateAt(const PState &state) = 0;
+  virtual PValue evaluateAt(const PState&) = 0;
   /** Asynchronous start of evaluation. If implemented will make a subsequent (blocking) call to evaluateAt
    * (with the same state) faster. */
-  virtual void startEvaluateAsync(const PState &state){}; // As a default derivatives don't have to implement this
+  virtual void startEvaluateAsync(const PState&){}; // As a default derivatives don't have to implement this
   virtual void abortEvaluateAsync(){};
 
   virtual ~PolicyBase() = default;

@@ -62,11 +62,11 @@ class GeometryBase {
    * Internal class, as it is built by GeometryBase only
    */
   class ParametrizedGeometry {
-    /// Position/Velocity at which thhis geometry is valid
-    StateX state_;
-
     /// Corresponding Jacobian at this state
     J_phi J_;
+
+    /// Position/Velocity at which thhis geometry is valid
+    StateX state_;
 
    public:
     ParametrizedGeometry(J_phi J, StateX state) : J_(J), state_(state) {}
@@ -138,7 +138,7 @@ class GeometryBase {
    * To be implemented in derived classes.
    * Calculates Jacobian at position x/x_dot.
    */
-  virtual J_phi J(const StateX &state) const = 0;
+  virtual J_phi J(const StateX&) const = 0;
 };
 
 template <int k, int d>

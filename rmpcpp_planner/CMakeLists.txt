@@ -8,7 +8,7 @@ catkin_simple()
 find_package(Eigen3 REQUIRED)
 include_directories(SYSTEM ${EIGEN3_INCLUDE_DIR})
 
-SET(CMAKE_CUDA_ARCHITECTURES 61)
+SET(CMAKE_CUDA_ARCHITECTURES 86)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_CXX_FLAGS " -Wall -Wextra")
@@ -25,13 +25,20 @@ add_compile_definitions(USE_OUSTER_LIDAR) # turn off to use sim lidar datastruct
 # "display_error_number" shows a warning number with all warnings, and the
 # rest is just suppressing specific warnings from Eigen. Note that the numbers
 # keep changing with every CUDA release so this list is a bit arbitrary.
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr  --generate-line-info -lineinfo -Xcudafe --display_error_number -Xcudafe --diag_suppress=2977  -Xcudafe --diag_suppress=3057  -Xcudafe --diag_suppress=3059 ")
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} --compiler-options -fPIC -arch=sm_61")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr  --generate-line-info -lineinfo")
+set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} --compiler-options --display_error_number -fPIC -arch=sm_61")
 MESSAGE(WARN ${CUDA_NVCC_FLAGS})
 # New warning numbers above CUDA 11.2.
-if (CUDA_VERSION_MAJOR EQUAL 11 AND CUDA_VERSION_MINOR GREATER_EQUAL 2)
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --diag_suppress=20012 -Xcudafe --diag_suppress=20011 -Xcudafe --diag_suppress=20014")
-endif ()
+if ((CUDA_VERSION_MAJOR EQUAL 11 AND CUDA_VERSION_MINOR GREATER_EQUAL 2) OR (CUDA_VERSION_MAJOR EQUAL 12))
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --display_error_number
+                          -Xcudafe --diag_suppress=375
+                          -Xcudafe --diag_suppress=20012
+                          -Xcudafe --diag_suppress=20011
+                          -Xcudafe --diag_suppress=20014
+                          -Xcudafe --diag_suppress=2977
+                          -Xcudafe --diag_suppress=3057
+                          -Xcudafe --diag_suppress=3059")
+endif()
 ######################################
 find_package(CUDA REQUIRED)
 include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
@@ -56,14 +63,14 @@ set(TESTSOURCES
 include_directories(include)
 
 # NVBLOX
-add_subdirectory(nvblox/nvblox)
+#add_subdirectory(nvblox/nvblox)
+find_package(nvblox REQUIRED)
 
 # BOOST
 find_package(Boost COMPONENTS program_options REQUIRED)
 
 # RMPCPP
-include_directories(../rmpcpp/include)
-
+include_directories(../rmpcpp/include /media/ducthan/376b23a1-5a02-4960-b3ca-24b2fcef8f89/4_REMANIAN_MANIFOLD/RMP_CPP/src/reactive_avoidance/rmpcpp_planner/nvblox/release/include)
 
 # Main executable
 cs_add_executable(${PROJECT_NAME}_runtest
@@ -71,7 +78,7 @@ cs_add_executable(${PROJECT_NAME}_runtest
         ${TESTSOURCES}
         tests/run_test.cc)
 target_link_libraries(${PROJECT_NAME}_runtest
-        nvblox_lib
+        nvblox::nvblox_lib
         Boost::program_options
         Eigen3::Eigen)
 
@@ -82,7 +89,7 @@ cs_add_executable(${PROJECT_NAME}_lidarnode
         ${COMPARISON_SOURCES}
         src/node/lidar_cloud_node.cc)
 target_link_libraries(${PROJECT_NAME}_lidarnode
-        nvblox_lib
+        nvblox::nvblox_lib
         Boost::program_options
         Eigen3::Eigen)
 

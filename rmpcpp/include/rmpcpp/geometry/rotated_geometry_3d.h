@@ -20,7 +20,7 @@ class RotatedGeometry3d : public GeometryBase<3, 3> {
   /**
    * Return jacobian. simply the rotation matrix;
    */
-  inline virtual typename base::J_phi J(const StateX &state) const { return R_x_q_; }
+  inline virtual typename base::J_phi J(const StateX&) const { return R_x_q_; }
 
   inline virtual StateX convertToX(const StateQ &state_q) const {
     return {R_x_q_ * state_q.pos_, R_x_q_ * state_q.vel_};
